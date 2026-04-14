@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { Routes, Route, Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Routes, Route, Link, useNavigate } from 'react-router-dom';
+import { supabase } from './lib/supabase';
 
 function HomePage() {
   const cardStyle = {
@@ -96,7 +97,7 @@ function HomePage() {
             color: '#8a6f5a',
             marginBottom: '1rem',
           }}
-        ><h1>THIS IS THE LIVE APP</h1>
+        > 
           Welcome to
         </p>
 
@@ -329,8 +330,55 @@ function HomePage() {
 }  
 
 // Sign in page with email and password fields, and a link back to the home page.
-
 function SignInPage() {
+  const navigate = useNavigate();
+
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+  });
+
+  const [errorMessage, setErrorMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  function handleChange(e) {
+    const { id, value } = e.target;
+
+    setFormData((prev) => ({
+      ...prev,
+      [id]: value,
+    }));
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setErrorMessage('');
+
+    if (!formData.email || !formData.password) {
+      setErrorMessage('Please enter your email and password.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const { error } = await supabase.auth.signInWithPassword({
+        email: formData.email,
+        password: formData.password,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      navigate('/creator-dashboard');
+    } catch (error) {
+      setErrorMessage(error.message || 'Unable to sign in.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <main
       style={{
@@ -355,7 +403,9 @@ function SignInPage() {
           textAlign: 'left',
         }}
       >
-        <h2 style={{ marginTop: 0, marginBottom: '0.5rem' }}> Welcome back to Vowtera.</h2>
+        <h2 style={{ marginTop: 0, marginBottom: '0.5rem' }}>
+          Welcome back to Vowtera.
+        </h2>
 
         <p
           style={{
@@ -367,7 +417,7 @@ function SignInPage() {
           Please sign in.
         </p>
 
-        <form>
+        <form onSubmit={handleSubmit}>
           <label
             htmlFor="email"
             style={{
@@ -382,6 +432,8 @@ function SignInPage() {
           <input
             id="email"
             type="email"
+            value={formData.email}
+            onChange={handleChange}
             placeholder="Enter your email"
             style={{
               width: '100%',
@@ -408,6 +460,8 @@ function SignInPage() {
           <input
             id="password"
             type="password"
+            value={formData.password}
+            onChange={handleChange}
             placeholder="Enter your password"
             style={{
               width: '100%',
@@ -433,8 +487,21 @@ function SignInPage() {
             </Link>
           </div>
 
+          {errorMessage && (
+            <p
+              style={{
+                color: '#b3261e',
+                marginBottom: '1rem',
+                lineHeight: '1.6',
+              }}
+            >
+              {errorMessage}
+            </p>
+          )}
+
           <button
             type="submit"
+            disabled={loading}
             style={{
               width: '100%',
               padding: '0.95rem 1rem',
@@ -443,11 +510,12 @@ function SignInPage() {
               background: '#8a6f5a',
               color: '#ffffff',
               fontSize: '1rem',
-              cursor: 'pointer',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              opacity: loading ? 0.7 : 1,
               marginBottom: '1rem',
             }}
           >
-            Sign In
+            {loading ? 'Signing In...' : 'Sign In'}
           </button>
         </form>
 
@@ -460,12 +528,12 @@ function SignInPage() {
             fontSize: '0.95rem',
           }}
         >
-          If you have been invited to a private event, please sign in using the email address
-          and temporary password found on your invitation.  
+          If you have been invited to a private event, please sign in using the
+          email address and temporary password found on your invitation.
         </p>
 
         <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
-         <Link
+          <Link
             to="/create-page"
             style={{
               color: '#8a6f5a',
@@ -475,8 +543,7 @@ function SignInPage() {
             }}
           >
             Create Your Private Page
-          </Link> 
-          
+          </Link>
         </div>
 
         <div style={{ textAlign: 'center' }}>
@@ -495,8 +562,91 @@ function SignInPage() {
     </main>
   );
 }
-
 function SignUpPage() {
+  const navigate = useNavigate();
+
+  const [formData, setFormData] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+  });
+
+  const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  function handleChange(e) {
+    const { id, value } = e.target;
+
+    setFormData((prev) => ({
+      ...prev,
+      [id]: value,
+    }));
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    const { firstName, lastName, email, password, confirmPassword } = formData;
+
+    if (!firstName || !lastName || !email || !password || !confirmPassword) {
+      setErrorMessage('Please complete all fields.');
+      return;
+    }
+
+    if (password.length < 8) {
+      setErrorMessage('Password must be at least 8 characters long.');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setErrorMessage('Passwords do not match.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      const user = data.user;
+
+      if (!user) {
+        throw new Error('Account was created, but no user was returned.');
+      }
+
+      const { error: profileError } = await supabase.from('profiles').insert({
+        id: user.id,
+        first_name: firstName,
+        last_name: lastName,
+        display_name: `${firstName} ${lastName}`,
+        email,
+      });
+
+      if (profileError) {
+        throw profileError;
+      }
+
+      setSuccessMessage('Creator account created successfully.');
+      navigate('/create-event');
+    } catch (error) {
+      setErrorMessage(error.message || 'Something went wrong creating your account.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <main
       style={{
@@ -524,17 +674,19 @@ function SignUpPage() {
         <h2 style={{ marginTop: 0, marginBottom: '0.5rem' }}>
           Create Your Private Page
         </h2>
-        
+
         <p
           style={{
             color: '#5f554c',
             lineHeight: '1.7',
             marginBottom: '1.5rem',
           }}
-        >Create your Vowtera account to start a private page, invite guests, and gather memories in one secure place.
+        >
+          Create your Vowtera creator account to start a private page, invite
+          guests, and gather memories in one secure place.
         </p>
 
-        <form>
+        <form onSubmit={handleSubmit}>
           <div
             style={{
               display: 'flex',
@@ -557,6 +709,8 @@ function SignUpPage() {
               <input
                 id="firstName"
                 type="text"
+                value={formData.firstName}
+                onChange={handleChange}
                 placeholder="Enter your first name"
                 style={{
                   width: '100%',
@@ -583,6 +737,8 @@ function SignUpPage() {
               <input
                 id="lastName"
                 type="text"
+                value={formData.lastName}
+                onChange={handleChange}
                 placeholder="Enter your last name"
                 style={{
                   width: '100%',
@@ -597,7 +753,7 @@ function SignUpPage() {
           </div>
 
           <label
-            htmlFor="signupEmail"
+            htmlFor="email"
             style={{
               display: 'block',
               marginBottom: '0.5rem',
@@ -607,8 +763,10 @@ function SignUpPage() {
             Email
           </label>
           <input
-            id="signupEmail"
+            id="email"
             type="email"
+            value={formData.email}
+            onChange={handleChange}
             placeholder="Enter your email"
             style={{
               width: '100%',
@@ -620,8 +778,9 @@ function SignUpPage() {
               boxSizing: 'border-box',
             }}
           />
+
           <label
-            htmlFor="signupPassword"
+            htmlFor="password"
             style={{
               display: 'block',
               marginBottom: '0.5rem',
@@ -631,8 +790,10 @@ function SignUpPage() {
             Password
           </label>
           <input
-            id="signupPassword"
+            id="password"
             type="password"
+            value={formData.password}
+            onChange={handleChange}
             placeholder="Create a password"
             style={{
               width: '100%',
@@ -658,11 +819,13 @@ function SignUpPage() {
           <input
             id="confirmPassword"
             type="password"
+            value={formData.confirmPassword}
+            onChange={handleChange}
             placeholder="Confirm your password"
             style={{
               width: '100%',
               padding: '0.85rem 1rem',
-              marginBottom: '1.5rem',
+              marginBottom: '1rem',
               borderRadius: '12px',
               border: '1px solid #d8d1ca',
               fontSize: '1rem',
@@ -670,8 +833,33 @@ function SignUpPage() {
             }}
           />
 
-          <Link
-            to="/create-event"
+          {errorMessage && (
+            <p
+              style={{
+                color: '#b3261e',
+                marginBottom: '1rem',
+                lineHeight: '1.6',
+              }}
+            >
+              {errorMessage}
+            </p>
+          )}
+
+          {successMessage && (
+            <p
+              style={{
+                color: '#2e7d32',
+                marginBottom: '1rem',
+                lineHeight: '1.6',
+              }}
+            >
+              {successMessage}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
             style={{
               width: '100%',
               padding: '0.95rem 1rem',
@@ -680,15 +868,13 @@ function SignUpPage() {
               background: '#8a6f5a',
               color: '#ffffff',
               fontSize: '1rem',
-              textDecoration: 'none',
-              display: 'block',
-              textAlign: 'center',
-              boxSizing: 'border-box',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              opacity: loading ? 0.7 : 1,
               marginBottom: '1rem',
             }}
           >
-            Continue
-          </Link>
+            {loading ? 'Creating Account...' : 'Continue'}
+          </button>
         </form>
 
         <p
@@ -700,7 +886,7 @@ function SignUpPage() {
             fontSize: '0.95rem',
           }}
         >
-          Already have a Creator Account?
+          Already have a creator account?
         </p>
 
         <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
@@ -735,6 +921,78 @@ function SignUpPage() {
 }
 
 function CreateEventPage({ eventDetails, setEventDetails }) {
+  const navigate = useNavigate();
+  const [errorMessage, setErrorMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setErrorMessage('');
+
+    if (!eventDetails.title || !eventDetails.type) {
+      setErrorMessage('Please enter an event title and select an event type.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        throw userError;
+      }
+
+      if (!user) {
+        throw new Error('You must be signed in to create an event.');
+      }
+
+      const { data: eventRow, error: eventError } = await supabase
+        .from('events')
+        .insert({
+          creator_profile_id: user.id,
+          title: eventDetails.title,
+          event_type: eventDetails.type,
+          event_date: eventDetails.date || null,
+          welcome_message: eventDetails.message || null,
+          is_private: true,
+        })
+        .select()
+        .single();
+
+      if (eventError) {
+        throw eventError;
+      }
+
+      const { error: memberError } = await supabase
+        .from('event_members')
+        .insert({
+          event_id: eventRow.id,
+          profile_id: user.id,
+          role: 'creator',
+          joined_at: new Date().toISOString(),
+        });
+
+      if (memberError) {
+        throw memberError;
+      }
+
+      setEventDetails((prev) => ({
+        ...prev,
+        id: eventRow.id,
+      }));
+
+      navigate('/invite-people');
+    } catch (error) {
+      setErrorMessage(error.message || 'Unable to create your event page.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <main
       style={{
@@ -774,7 +1032,7 @@ function CreateEventPage({ eventDetails, setEventDetails }) {
           they are in the right place.
         </p>
 
-        <form>
+        <form onSubmit={handleSubmit}>
           <label
             htmlFor="eventTitle"
             style={{
@@ -839,7 +1097,7 @@ function CreateEventPage({ eventDetails, setEventDetails }) {
             <option value="reunion">Reunion</option>
             <option value="graduation">Graduation</option>
             <option value="memorial">Memorial</option>
-            <option value="baby-shower">Baby Shower</option>
+            <option value="baby_shower">Baby Shower</option>
             <option value="other">Other</option>
           </select>
 
@@ -892,7 +1150,7 @@ function CreateEventPage({ eventDetails, setEventDetails }) {
             style={{
               width: '100%',
               padding: '0.85rem 1rem',
-              marginBottom: '1.5rem',
+              marginBottom: '1rem',
               borderRadius: '12px',
               border: '1px solid #d8d1ca',
               fontSize: '1rem',
@@ -900,6 +1158,18 @@ function CreateEventPage({ eventDetails, setEventDetails }) {
               resize: 'vertical',
             }}
           />
+
+          {errorMessage && (
+            <p
+              style={{
+                color: '#b3261e',
+                marginBottom: '1rem',
+                lineHeight: '1.6',
+              }}
+            >
+              {errorMessage}
+            </p>
+          )}
 
           <div
             style={{
@@ -924,8 +1194,9 @@ function CreateEventPage({ eventDetails, setEventDetails }) {
               Back
             </Link>
 
-           <Link
-              to="/invite-people"
+            <button
+              type="submit"
+              disabled={loading}
               style={{
                 padding: '0.95rem 1.4rem',
                 border: 'none',
@@ -933,20 +1204,99 @@ function CreateEventPage({ eventDetails, setEventDetails }) {
                 background: '#8a6f5a',
                 color: '#ffffff',
                 fontSize: '1rem',
-                textDecoration: 'none',
-                display: 'inline-block',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                opacity: loading ? 0.7 : 1,
               }}
             >
-              Continue to Invitations
-            </Link>
+              {loading ? 'Creating Event...' : 'Continue to Invitations'}
+            </button>
           </div>
         </form>
       </div>
     </main>
   );
 }
+function InvitePeoplePage({ eventDetails, setInvitationSummary }) {
+  const navigate = useNavigate();
+  const [inviteRole, setInviteRole] = useState('viewer');
+  const [inviteEmails, setInviteEmails] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+  const [loading, setLoading] = useState(false);
 
-function InvitePeoplePage({ eventDetails }) {
+  function generateTemporaryPassword(length = 10) {
+    const chars =
+      'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
+    let result = '';
+    for (let i = 0; i < length; i += 1) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    if (!eventDetails.id) {
+      setErrorMessage('No event was found. Please create your event page first.');
+      return;
+    }
+
+    const emails = inviteEmails
+      .split('\n')
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean);
+
+    if (emails.length === 0) {
+      setErrorMessage('Please enter at least one email address.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        throw userError;
+      }
+
+      if (!user) {
+        throw new Error('You must be signed in to send invitations.');
+      }
+
+      const invitationRows = emails.map((email) => ({
+        event_id: eventDetails.id,
+        invited_by_profile_id: user.id,
+        email,
+        role: inviteRole,
+        temporary_password: generateTemporaryPassword(),
+        invitation_status: 'pending',
+      }));
+
+      const { error: inviteError } = await supabase
+        .from('invitations')
+        .insert(invitationRows);
+
+      if (inviteError) {
+        throw inviteError;
+      }
+
+      setInvitationSummary({ count: emails.length });
+      setInviteEmails('');
+      navigate('/invitation-confirmation');
+        } catch (error) {
+          setErrorMessage(error.message || 'Unable to save invitations.');
+        } finally {
+          setLoading(false);
+        }
+      }
+
   return (
     <main
       style={{
@@ -1000,7 +1350,7 @@ function InvitePeoplePage({ eventDetails }) {
           temporary password.
         </p>
 
-        <form>
+        <form onSubmit={handleSubmit}>
           <label
             htmlFor="inviteRole"
             style={{
@@ -1013,6 +1363,8 @@ function InvitePeoplePage({ eventDetails }) {
           </label>
           <select
             id="inviteRole"
+            value={inviteRole}
+            onChange={(e) => setInviteRole(e.target.value)}
             style={{
               width: '100%',
               padding: '0.85rem 1rem',
@@ -1041,6 +1393,8 @@ function InvitePeoplePage({ eventDetails }) {
           <textarea
             id="inviteEmails"
             rows="8"
+            value={inviteEmails}
+            onChange={(e) => setInviteEmails(e.target.value)}
             placeholder={`Enter one email per line
 
 example1@email.com
@@ -1064,12 +1418,36 @@ example3@email.com`}
               color: '#7a7068',
               lineHeight: '1.6',
               marginTop: 0,
-              marginBottom: '1.5rem',
+              marginBottom: '1rem',
             }}
           >
             Tip: Paste one email per line. You can send viewer invitations first,
             then return to send uploader invitations separately if needed.
           </p>
+
+          {errorMessage && (
+            <p
+              style={{
+                color: '#b3261e',
+                marginBottom: '1rem',
+                lineHeight: '1.6',
+              }}
+            >
+              {errorMessage}
+            </p>
+          )}
+
+          {successMessage && (
+            <p
+              style={{
+                color: '#2e7d32',
+                marginBottom: '1rem',
+                lineHeight: '1.6',
+              }}
+            >
+              {successMessage}
+            </p>
+          )}
 
           <div
             style={{
@@ -1096,6 +1474,7 @@ example3@email.com`}
 
             <button
               type="submit"
+              disabled={loading}
               style={{
                 padding: '0.95rem 1.4rem',
                 border: 'none',
@@ -1103,14 +1482,608 @@ example3@email.com`}
                 background: '#8a6f5a',
                 color: '#ffffff',
                 fontSize: '1rem',
-                cursor: 'pointer',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                opacity: loading ? 0.7 : 1,
               }}
             >
-              Send Invitations
+              {loading ? 'Saving Invitations...' : 'Send Invitations'}
             </button>
           </div>
         </form>
       </div>
+    </main>
+  );
+}
+
+function InvitationConfirmationPage({ eventDetails, invitationSummary }) {
+  return (
+    <main
+      style={{
+        minHeight: '100vh',
+        fontFamily: 'Arial, sans-serif',
+        background: '#f8f6f2',
+        color: '#2f2a24',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '2rem',
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          maxWidth: '620px',
+          background: '#ffffff',
+          borderRadius: '20px',
+          padding: '2.5rem',
+          boxShadow: '0 10px 30px rgba(0, 0, 0, 0.06)',
+          textAlign: 'center',
+        }}
+      >
+        <h1
+          style={{
+            marginTop: 0,
+            marginBottom: '1rem',
+            fontSize: '2rem',
+          }}
+        >
+          Invitations Saved
+        </h1>
+
+        <p
+          style={{
+            color: '#5f554c',
+            lineHeight: '1.8',
+            marginBottom: '1rem',
+          }}
+        >
+          Your invitations for{' '}
+          <strong>{eventDetails.title || 'your event'}</strong> have been saved.
+        </p>
+
+        <p
+          style={{
+            color: '#5f554c',
+            lineHeight: '1.8',
+            marginBottom: '2rem',
+          }}
+        >
+          {invitationSummary.count} invitation
+          {invitationSummary.count === 1 ? '' : 's'} {invitationSummary.count === 1 ? 'was' : 'were'} created successfully.
+        </p>
+
+        <div
+          style={{
+            display: 'flex',
+            gap: '1rem',
+            justifyContent: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
+          <Link
+            to="/invite-people"
+            style={{
+              padding: '0.95rem 1.2rem',
+              borderRadius: '999px',
+              border: '1px solid #8a6f5a',
+              background: '#ffffff',
+              color: '#8a6f5a',
+              fontSize: '1rem',
+              textDecoration: 'none',
+              display: 'inline-block',
+            }}
+          >
+            Add More Invitations
+          </Link>
+
+          <Link
+            to="/creator-dashboard"
+            style={{
+              padding: '0.95rem 1.4rem',
+              border: 'none',
+              borderRadius: '999px',
+              background: '#8a6f5a',
+              color: '#ffffff',
+              fontSize: '1rem',
+              textDecoration: 'none',
+              display: 'inline-block',
+            }}
+          >
+            Go to Dashboard
+          </Link>
+        </div>
+      </div>
+    </main>
+  );
+}
+function CreatorDashboardPage() {
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [eventData, setEventData] = useState(null);
+  const [invitationCount, setInvitationCount] = useState(0);
+  const [invitations, setInvitations] = useState([]);
+
+  const infoCardStyle = {
+    background: '#ffffff',
+    borderRadius: '20px',
+    padding: '1.5rem',
+    boxShadow: '0 10px 30px rgba(0, 0, 0, 0.06)',
+    flex: '1 1 280px',
+  };
+
+  useEffect(() => {
+    async function loadDashboard() {
+      try {
+        setLoading(true);
+        setErrorMessage('');
+
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError) {
+          throw userError;
+        }
+
+        if (!user) {
+          throw new Error('You must be signed in to view your dashboard.');
+        }
+
+        const { data: eventRow, error: eventError } = await supabase
+          .from('events')
+          .select('*')
+          .eq('creator_profile_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (eventError) {
+          throw eventError;
+        }
+
+        setEventData(eventRow);
+
+        if (eventRow) {
+          const { data: invitationRows, error: inviteError } = await supabase
+            .from('invitations')
+            .select('*')
+            .eq('event_id', eventRow.id)
+            .order('invited_at', { ascending: false });
+
+          if (inviteError) {
+            throw inviteError;
+          }
+
+          setInvitations(invitationRows || []);
+          setInvitationCount((invitationRows || []).length);
+        }
+      } catch (error) {
+        setErrorMessage(error.message || 'Unable to load dashboard data.');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadDashboard();
+  }, []);
+
+  if (loading) {
+    return (
+      <main
+        style={{
+          minHeight: '100vh',
+          fontFamily: 'Arial, sans-serif',
+          background: '#f8f6f2',
+          color: '#2f2a24',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '2rem',
+        }}
+      >
+        <p>Loading your dashboard...</p>
+      </main>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <main
+        style={{
+          minHeight: '100vh',
+          fontFamily: 'Arial, sans-serif',
+          background: '#f8f6f2',
+          color: '#2f2a24',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '2rem',
+        }}
+      >
+        <div
+          style={{
+            background: '#ffffff',
+            padding: '2rem',
+            borderRadius: '20px',
+            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.06)',
+            maxWidth: '520px',
+            textAlign: 'center',
+          }}
+        >
+          <h2 style={{ marginTop: 0 }}>Dashboard Error</h2>
+          <p style={{ color: '#b3261e', lineHeight: '1.7' }}>{errorMessage}</p>
+          <Link
+            to="/"
+            style={{
+              color: '#8a6f5a',
+              textDecoration: 'none',
+              fontWeight: 'bold',
+            }}
+          >
+            ← Back to Home
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
+  if (!eventData) {
+    return (
+      <main
+        style={{
+          minHeight: '100vh',
+          fontFamily: 'Arial, sans-serif',
+          background: '#f8f6f2',
+          color: '#2f2a24',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '2rem',
+        }}
+      >
+        <div
+          style={{
+            background: '#ffffff',
+            padding: '2rem',
+            borderRadius: '20px',
+            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.06)',
+            maxWidth: '520px',
+            textAlign: 'center',
+          }}
+        >
+          <h2 style={{ marginTop: 0 }}>No Event Found</h2>
+          <p style={{ color: '#5f554c', lineHeight: '1.7' }}>
+            You do not have an event page yet. Start by creating your first private page.
+          </p>
+          <Link
+            to="/create-page"
+            style={{
+              color: '#8a6f5a',
+              textDecoration: 'none',
+              fontWeight: 'bold',
+            }}
+          >
+            Create Your Private Page
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main
+      style={{
+        minHeight: '100vh',
+        fontFamily: 'Arial, sans-serif',
+        background: '#f8f6f2',
+        color: '#2f2a24',
+        padding: '2rem 1.5rem 3rem',
+      }}
+    >
+      <section
+        style={{
+          maxWidth: '1100px',
+          margin: '0 auto',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '1rem',
+            flexWrap: 'wrap',
+            marginBottom: '2rem',
+          }}
+        >
+          <div>
+            <p
+              style={{
+                margin: 0,
+                color: '#8a6f5a',
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                fontSize: '0.85rem',
+              }}
+            >
+              Creator Dashboard
+            </p>
+
+            <h1
+              style={{
+                marginTop: '0.5rem',
+                marginBottom: '0.5rem',
+                fontSize: '2.2rem',
+              }}
+            >
+              {eventData.title}
+            </h1>
+
+            <p
+              style={{
+                margin: 0,
+                color: '#5f554c',
+                lineHeight: '1.7',
+              }}
+            >
+              Manage your private page, invitations, and event details from one place.
+            </p>
+          </div>
+
+          <Link
+            to="/invite-people"
+            style={{
+              padding: '0.95rem 1.4rem',
+              borderRadius: '999px',
+              background: '#8a6f5a',
+              color: '#ffffff',
+              textDecoration: 'none',
+              display: 'inline-block',
+              fontSize: '1rem',
+            }}
+          >
+            Invite More People
+          </Link>
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            gap: '1.5rem',
+            flexWrap: 'wrap',
+            marginBottom: '2rem',
+          }}
+        >
+          <div style={infoCardStyle}>
+            <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>Event Details</h3>
+            <p style={{ margin: '0 0 0.75rem', lineHeight: '1.7', color: '#5f554c' }}>
+              <strong>Type:</strong>{' '}
+              {eventData.event_type ? eventData.event_type.replace('_', ' ') : 'Not set'}
+            </p>
+            <p style={{ margin: '0 0 0.75rem', lineHeight: '1.7', color: '#5f554c' }}>
+              <strong>Date:</strong> {eventData.event_date || 'Not set'}
+            </p>
+            <p style={{ margin: 0, lineHeight: '1.7', color: '#5f554c' }}>
+              <strong>Message:</strong>{' '}
+              {eventData.welcome_message || 'No welcome message has been added yet.'}
+            </p>
+          </div>
+
+          <div style={infoCardStyle}>
+            <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>Invitations</h3>
+            <p style={{ margin: '0 0 0.75rem', lineHeight: '1.7', color: '#5f554c' }}>
+              <strong>Total Invitations Created:</strong> {invitationCount}
+            </p>
+            <p style={{ margin: 0, lineHeight: '1.7', color: '#5f554c' }}>
+              Use the invitation page to add more viewers and uploaders as your event grows.
+            </p>
+          </div>
+        </div>
+
+        <div
+          style={{
+            background: '#ffffff',
+            borderRadius: '20px',
+            padding: '1.75rem',
+            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.06)',
+            marginBottom: '2rem',
+          }}
+        >
+          <h2
+            style={{
+              marginTop: 0,
+              marginBottom: '1rem',
+              fontSize: '1.5rem',
+            }}
+          >
+            Sent Invitations
+          </h2>
+
+          {invitations.length === 0 ? (
+            <p
+              style={{
+                margin: 0,
+                color: '#5f554c',
+                lineHeight: '1.7',
+              }}
+            >
+              No invitations have been sent yet.
+            </p>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table
+                style={{
+                  width: '100%',
+                  borderCollapse: 'collapse',
+                }}
+              >
+                <thead>
+                  <tr>
+                    <th
+                      style={{
+                        textAlign: 'left',
+                        padding: '0.75rem',
+                        borderBottom: '1px solid #e6dfd8',
+                        color: '#5f554c',
+                      }}
+                    >
+                      Email
+                    </th>
+                    <th
+                      style={{
+                        textAlign: 'left',
+                        padding: '0.75rem',
+                        borderBottom: '1px solid #e6dfd8',
+                        color: '#5f554c',
+                      }}
+                    >
+                      Role
+                    </th>
+                    <th
+                      style={{
+                        textAlign: 'left',
+                        padding: '0.75rem',
+                        borderBottom: '1px solid #e6dfd8',
+                        color: '#5f554c',
+                      }}
+                    >
+                      Status
+                    </th>
+                    <th
+                      style={{
+                        textAlign: 'left',
+                        padding: '0.75rem',
+                        borderBottom: '1px solid #e6dfd8',
+                        color: '#5f554c',
+                      }}
+                    >
+                      Invited
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invitations.map((invite) => (
+                    <tr key={invite.id}>
+                      <td
+                        style={{
+                          padding: '0.75rem',
+                          borderBottom: '1px solid #f0ebe6',
+                          color: '#2f2a24',
+                        }}
+                      >
+                        {invite.email}
+                      </td>
+                      <td
+                        style={{
+                          padding: '0.75rem',
+                          borderBottom: '1px solid #f0ebe6',
+                          color: '#5f554c',
+                          textTransform: 'capitalize',
+                        }}
+                      >
+                        {invite.role}
+                      </td>
+                      <td
+                        style={{
+                          padding: '0.75rem',
+                          borderBottom: '1px solid #f0ebe6',
+                          color: '#5f554c',
+                          textTransform: 'capitalize',
+                        }}
+                      >
+                        {invite.invitation_status}
+                      </td>
+                      <td
+                        style={{
+                          padding: '0.75rem',
+                          borderBottom: '1px solid #f0ebe6',
+                          color: '#5f554c',
+                        }}
+                      >
+                        {invite.invited_at
+                          ? new Date(invite.invited_at).toLocaleDateString()
+                          : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div
+          style={{
+            background: '#ffffff',
+            borderRadius: '20px',
+            padding: '1.75rem',
+            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.06)',
+          }}
+        >
+          <h2
+            style={{
+              marginTop: 0,
+              marginBottom: '1rem',
+              fontSize: '1.5rem',
+            }}
+          >
+            Quick Actions
+          </h2>
+
+          <div
+            style={{
+              display: 'flex',
+              gap: '1rem',
+              flexWrap: 'wrap',
+            }}
+          >
+            <Link
+              to="/invite-people"
+              style={{
+                padding: '0.9rem 1.2rem',
+                borderRadius: '999px',
+                background: '#8a6f5a',
+                color: '#ffffff',
+                textDecoration: 'none',
+                display: 'inline-block',
+              }}
+            >
+              Invite More People
+            </Link>
+
+            <Link
+              to="/create-event"
+              style={{
+                padding: '0.9rem 1.2rem',
+                borderRadius: '999px',
+                border: '1px solid #8a6f5a',
+                background: '#ffffff',
+                color: '#8a6f5a',
+                textDecoration: 'none',
+                display: 'inline-block',
+              }}
+            >
+              Edit Event Details
+            </Link>
+
+            <Link
+              to="/"
+              style={{
+                padding: '0.9rem 1.2rem',
+                borderRadius: '999px',
+                border: '1px solid #8a6f5a',
+                background: '#ffffff',
+                color: '#8a6f5a',
+                textDecoration: 'none',
+                display: 'inline-block',
+              }}
+            >
+              Return Home
+            </Link>
+          </div>
+        </div>
+      </section>
     </main>
   );
 }
@@ -1154,10 +2127,15 @@ function ForgotPasswordPage() {
 
 function App() {
   const [eventDetails, setEventDetails] = useState({
+    id: '',
     title: '',
     type: '',
     date: '',
     message: '',
+  });
+
+  const [invitationSummary, setInvitationSummary] = useState({
+    count: 0,
   });
 
   return (
@@ -1176,8 +2154,23 @@ function App() {
       />
       <Route
         path="/invite-people"
-        element={<InvitePeoplePage eventDetails={eventDetails} />}
+        element={
+          <InvitePeoplePage
+            eventDetails={eventDetails}
+            setInvitationSummary={setInvitationSummary}
+          />
+        }
       />
+      <Route
+        path="/invitation-confirmation"
+        element={
+          <InvitationConfirmationPage
+            eventDetails={eventDetails}
+            invitationSummary={invitationSummary}
+          />
+        }
+      />
+      <Route path="/creator-dashboard" element={<CreatorDashboardPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
     </Routes>
   );

@@ -957,15 +957,12 @@ function CreateEventPage({ eventDetails, setEventDetails }) {
           title: eventDetails.title,
           event_type: eventDetails.type,
           event_date: eventDetails.date || null,
+          event_location: eventDetails.location || null,
           welcome_message: eventDetails.message || null,
           is_private: true,
         })
         .select()
         .single();
-
-      if (eventError) {
-        throw eventError;
-      }
 
       const { error: memberError } = await supabase
         .from('event_members')
@@ -1128,6 +1125,35 @@ function CreateEventPage({ eventDetails, setEventDetails }) {
               boxSizing: 'border-box',
             }}
           />
+
+          <label
+              htmlFor="eventLocation"
+              style={{
+                display: 'block',
+                marginBottom: '0.5rem',
+                fontWeight: 'bold',
+              }}
+            >
+              Event Location
+            </label>
+            <input
+              id="eventLocation"
+              type="text"
+              value={eventDetails.location}
+              onChange={(e) =>
+                setEventDetails({ ...eventDetails, location: e.target.value })
+              }
+              placeholder="Example: Denver Botanic Gardens"
+              style={{
+                width: '100%',
+                padding: '0.85rem 1rem',
+                marginBottom: '1rem',
+                borderRadius: '12px',
+                border: '1px solid #d8d1ca',
+                fontSize: '1rem',
+                boxSizing: 'border-box',
+              }}
+            />
 
           <label
             htmlFor="welcomeMessage"
@@ -1600,6 +1626,7 @@ function CreatorDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   const [eventData, setEventData] = useState(null);
+  const [profileData, setProfileData] = useState(null);
   const [invitationCount, setInvitationCount] = useState(0);
   const [invitations, setInvitations] = useState([]);
 
@@ -1630,6 +1657,19 @@ function CreatorDashboardPage() {
           throw new Error('You must be signed in to view your dashboard.');
         }
 
+        const { data: profileRow, error: profileError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          if (profileError) {
+            throw profileError;
+          }
+
+          setProfileData(profileRow);
+
+
         const { data: eventRow, error: eventError } = await supabase
           .from('events')
           .select('*')
@@ -1643,6 +1683,21 @@ function CreatorDashboardPage() {
         }
 
         setEventData(eventRow);
+
+        if (eventRow) {
+          const { data: mediaRows, error: mediaError } = await supabase
+            .from('media')
+            .select('*')
+            .eq('event_id', eventRow.id)
+            .eq('is_visible', true)
+            .order('created_at', { ascending: false });
+
+          if (mediaError) {
+            throw mediaError;
+          }
+
+          //setMediaItems(mediaRows || []);
+        }
 
         if (eventRow) {
           const { data: invitationRows, error: inviteError } = await supabase
@@ -1827,6 +1882,19 @@ function CreatorDashboardPage() {
                 lineHeight: '1.7',
               }}
             >
+              {profileData
+                ? `Welcome, ${profileData.display_name || `${profileData.first_name} ${profileData.last_name}`}.`
+                : 'Welcome.'}
+            </p>
+
+            <p
+              style={{
+                marginTop: '0.35rem',
+                marginBottom: 0,
+                color: '#5f554c',
+                lineHeight: '1.7',
+              }}
+            >
               Manage your private page, invitations, and event details from one place.
             </p>
           </div>
@@ -1863,6 +1931,9 @@ function CreatorDashboardPage() {
             </p>
             <p style={{ margin: '0 0 0.75rem', lineHeight: '1.7', color: '#5f554c' }}>
               <strong>Date:</strong> {eventData.event_date || 'Not set'}
+            </p>
+            <p style={{ margin: '0 0 0.75rem', lineHeight: '1.7', color: '#5f554c' }}>
+              <strong>Location:</strong> {eventData.event_location || 'Not set'}
             </p>
             <p style={{ margin: 0, lineHeight: '1.7', color: '#5f554c' }}>
               <strong>Message:</strong>{' '}
@@ -2053,6 +2124,21 @@ function CreatorDashboardPage() {
             </Link>
 
             <Link
+              to="/event-page"
+              style={{
+                padding: '0.9rem 1.2rem',
+                borderRadius: '999px',
+                border: '1px solid #8a6f5a',
+                background: '#ffffff',
+                color: '#8a6f5a',
+                textDecoration: 'none',
+                display: 'inline-block',
+              }}
+            >
+              View Event Page
+            </Link>
+
+            <Link
               to="/create-event"
               style={{
                 padding: '0.9rem 1.2rem',
@@ -2082,6 +2168,935 @@ function CreatorDashboardPage() {
               Return Home
             </Link>
           </div>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function PrivateEventPage() {
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [eventData, setEventData] = useState(null);
+  const [profileData, setProfileData] = useState(null);
+  const [mediaItems, setMediaItems] = useState([]);
+
+  useEffect(() => {
+    async function loadEventPage() {
+      try {
+        setLoading(true);
+        setErrorMessage('');
+
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError) {
+          throw userError;
+        }
+
+        if (!user) {
+          throw new Error('You must be signed in to view this event page.');
+        }
+
+        const { data: profileRow, error: profileError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (profileError) {
+          throw profileError;
+        }
+
+        setProfileData(profileRow);
+
+        const { data: eventRow, error: eventError } = await supabase
+          .from('events')
+          .select('*')
+          .eq('creator_profile_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (eventError) {
+          throw eventError;
+        }
+
+        setEventData(eventRow);
+
+        if (eventRow) {
+          const { data: mediaRows, error: mediaError } = await supabase
+            .from('media')
+            .select('*')
+            .eq('event_id', eventRow.id)
+            .eq('is_visible', true)
+            .order('created_at', { ascending: false });
+
+          if (mediaError) {
+            throw mediaError;
+          }
+
+          const hydratedMedia = await Promise.all(
+            (mediaRows || []).map(async (item) => {
+              const path = item.storage_path || item.file_url;
+
+              if (!path) {
+                return { ...item, signedUrl: null };
+              }
+
+              const { data: signedData, error: signedError } = await supabase.storage
+                .from('event-media')
+                .createSignedUrl(path, 3600);
+
+              if (signedError) {
+                  console.error('SIGNED URL ERROR:', signedError, 'PATH:', path);
+                  return { ...item, signedUrl: null };
+                }
+
+                console.log('SIGNED URL CREATED:', signedData?.signedUrl);
+                return { ...item, signedUrl: signedData.signedUrl };
+            })
+          );
+
+          setMediaItems(hydratedMedia);
+        }
+      } catch (error) {
+        setErrorMessage(error.message || 'Unable to load the event page.');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadEventPage();
+  }, []);
+
+  if (loading) {
+    return (
+      <main
+        style={{
+          minHeight: '100vh',
+          fontFamily: 'Arial, sans-serif',
+          background: '#f8f6f2',
+          color: '#2f2a24',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '2rem',
+        }}
+      >
+        <p>Loading your event page...</p>
+      </main>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <main
+        style={{
+          minHeight: '100vh',
+          fontFamily: 'Arial, sans-serif',
+          background: '#f8f6f2',
+          color: '#2f2a24',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '2rem',
+        }}
+      >
+        <div
+          style={{
+            background: '#ffffff',
+            padding: '2rem',
+            borderRadius: '20px',
+            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.06)',
+            maxWidth: '540px',
+            textAlign: 'center',
+          }}
+        >
+          <h2 style={{ marginTop: 0 }}>Event Page Error</h2>
+          <p style={{ color: '#b3261e', lineHeight: '1.7' }}>{errorMessage}</p>
+          <Link
+            to="/creator-dashboard"
+            style={{
+              color: '#8a6f5a',
+              textDecoration: 'none',
+              fontWeight: 'bold',
+            }}
+          >
+            ← Back to Dashboard
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
+  if (!eventData) {
+    return (
+      <main
+        style={{
+          minHeight: '100vh',
+          fontFamily: 'Arial, sans-serif',
+          background: '#f8f6f2',
+          color: '#2f2a24',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '2rem',
+        }}
+      >
+        <div
+          style={{
+            background: '#ffffff',
+            padding: '2rem',
+            borderRadius: '20px',
+            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.06)',
+            maxWidth: '540px',
+            textAlign: 'center',
+          }}
+        >
+          <h2 style={{ marginTop: 0 }}>No Event Found</h2>
+          <p style={{ color: '#5f554c', lineHeight: '1.7' }}>
+            Create your event page first, then return here to view and manage it.
+          </p>
+          <Link
+            to="/create-event"
+            style={{
+              color: '#8a6f5a',
+              textDecoration: 'none',
+              fontWeight: 'bold',
+            }}
+          >
+            Create Your Event Page
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main
+      style={{
+        minHeight: '100vh',
+        fontFamily: 'Arial, sans-serif',
+        background: '#f8f6f2',
+        color: '#2f2a24',
+        padding: '2rem 1.5rem 3rem',
+      }}
+    >
+      <section
+        style={{
+          maxWidth: '1100px',
+          margin: '0 auto',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            gap: '1rem',
+            flexWrap: 'wrap',
+            marginBottom: '2rem',
+          }}
+        >
+          <div>
+            <p
+              style={{
+                margin: 0,
+                color: '#8a6f5a',
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                fontSize: '0.85rem',
+              }}
+            >
+              Private Event Page
+            </p>
+
+            <h1
+              style={{
+                marginTop: '0.5rem',
+                marginBottom: '0.5rem',
+                fontSize: '2.4rem',
+              }}
+            >
+              {eventData.title}
+            </h1>
+
+            <p
+              style={{
+                margin: 0,
+                color: '#5f554c',
+                lineHeight: '1.7',
+              }}
+            >
+              {profileData
+                ? `Managed by ${profileData.display_name || `${profileData.first_name} ${profileData.last_name}`}`
+                : 'Managed by event creator'}
+            </p>
+          </div>
+
+          <Link
+            to="/upload-media"
+            style={{
+              padding: '0.95rem 1.4rem',
+              borderRadius: '999px',
+              background: '#8a6f5a',
+              color: '#ffffff',
+              textDecoration: 'none',
+              display: 'inline-block',
+              fontSize: '1rem',
+            }}
+          >
+            Upload Photos or Videos
+          </Link>
+        </div>
+
+        <div
+          style={{
+            background: '#ffffff',
+            borderRadius: '20px',
+            padding: '1.75rem',
+            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.06)',
+            marginBottom: '2rem',
+          }}
+        >
+          <h2
+            style={{
+              marginTop: 0,
+              marginBottom: '1rem',
+              fontSize: '1.5rem',
+            }}
+          >
+            Event Details
+          </h2>
+
+          <p style={{ margin: '0 0 0.75rem', lineHeight: '1.7', color: '#5f554c' }}>
+            <strong>Type:</strong>{' '}
+            {eventData.event_type ? eventData.event_type.replace('_', ' ') : 'Not set'}
+          </p>
+
+          <p style={{ margin: '0 0 0.75rem', lineHeight: '1.7', color: '#5f554c' }}>
+            <strong>Date:</strong> {eventData.event_date || 'Not set'}
+          </p>
+
+          <p style={{ margin: '0 0 0.75rem', lineHeight: '1.7', color: '#5f554c' }}>
+            <strong>Location:</strong> {eventData.event_location || 'Not set'}
+          </p>
+
+          <p style={{ margin: 0, lineHeight: '1.7', color: '#5f554c' }}>
+            <strong>Welcome Message:</strong>{' '}
+            {eventData.welcome_message || 'No welcome message has been added yet.'}
+          </p>
+        </div>
+
+        <div
+          style={{
+            marginBottom: '2rem',
+          }}
+        >
+          <h2
+            style={{
+              marginTop: 0,
+              marginBottom: '1rem',
+              fontSize: '1.7rem',
+            }}
+          >
+            Gallery
+          </h2>
+
+          {mediaItems.length === 0 ? (
+            <div
+              style={{
+                background: '#ffffff',
+                borderRadius: '18px',
+                padding: '1.5rem',
+                boxShadow: '0 10px 30px rgba(0, 0, 0, 0.06)',
+                color: '#7a7068',
+                lineHeight: '1.7',
+              }}
+            >
+              No photos or videos have been added yet.
+            </div>
+          ) : (
+            <div
+              style={{
+                display: 'flex',
+                gap: '1.5rem',
+                flexWrap: 'wrap',
+              }}
+            >
+              {mediaItems.map((item) => (
+                <div
+                  key={item.id}
+                  style={{
+                    background: '#ffffff',
+                    borderRadius: '18px',
+                    padding: '1rem',
+                    boxShadow: '0 10px 30px rgba(0, 0, 0, 0.06)',
+                    flex: '1 1 280px',
+                  }}
+                >
+                  {item.media_type === 'photo' && item.signedUrl ? (
+                    <img
+  src={item.signedUrl}
+  alt={item.caption || 'Uploaded event photo'}
+  style={{
+    width: '100%',
+    height: 'auto',
+    borderRadius: '12px',
+    marginBottom: '0.75rem',
+  }}
+/>
+                  ) : null}
+
+                  {item.media_type === 'video' && item.signedUrl ? (
+                    <video
+                      controls
+                      src={item.signedUrl}
+                      style={{
+                        width: '100%',
+                        height: '220px',
+                        objectFit: 'cover',
+                        borderRadius: '12px',
+                        marginBottom: '0.75rem',
+                      }}
+                    />
+                  ) : null}
+
+                  <p
+                    style={{
+                      marginTop: 0,
+                      marginBottom: '0.5rem',
+                      color: '#8a6f5a',
+                      textTransform: 'capitalize',
+                      fontWeight: 'bold',
+                    }}
+                  >
+                    {item.media_type}
+                  </p>
+
+                  <p
+                    style={{
+                      margin: 0,
+                      lineHeight: '1.6',
+                      color: '#5f554c',
+                    }}
+                  >
+                    {item.caption || 'No caption provided.'}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            gap: '1rem',
+            flexWrap: 'wrap',
+          }}
+        >
+          <Link
+            to="/creator-dashboard"
+            style={{
+              padding: '0.9rem 1.2rem',
+              borderRadius: '999px',
+              border: '1px solid #8a6f5a',
+              background: '#ffffff',
+              color: '#8a6f5a',
+              textDecoration: 'none',
+              display: 'inline-block',
+            }}
+          >
+            Back to Dashboard
+          </Link>
+
+          <Link
+            to="/upload-media"
+            style={{
+              padding: '0.9rem 1.2rem',
+              borderRadius: '999px',
+              background: '#8a6f5a',
+              color: '#ffffff',
+              textDecoration: 'none',
+              display: 'inline-block',
+            }}
+          >
+            Upload Photos or Videos
+          </Link>
+        </div>
+      </section>
+    </main>
+  );
+}
+function UploadMediaPage() {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+  const [eventData, setEventData] = useState(null);
+  const [profileData, setProfileData] = useState(null);
+  const [authUserId, setAuthUserId] = useState('');
+
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [formData, setFormData] = useState({
+    mediaType: 'photo',
+    caption: '',
+  });
+
+  useEffect(() => {
+    async function loadUploadPage() {
+      try {
+        setLoading(true);
+        setErrorMessage('');
+
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError) throw userError;
+        if (!user) throw new Error('You must be signed in to upload media.');
+
+        console.log('LOAD PAGE auth user id:', user.id);
+        setAuthUserId(user.id);
+
+        const { data: profileRow, error: profileError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (profileError) throw profileError;
+
+        console.log('LOAD PAGE profile row:', profileRow);
+        setProfileData(profileRow);
+
+        const { data: eventRow, error: eventError } = await supabase
+          .from('events')
+          .select('*')
+          .eq('creator_profile_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (eventError) throw eventError;
+        if (!eventRow) throw new Error('No event was found for this account.');
+
+        console.log('LOAD PAGE event row:', eventRow);
+        setEventData(eventRow);
+      } catch (error) {
+        console.error('LOAD PAGE ERROR:', error);
+        setErrorMessage(error.message || 'Unable to load upload page.');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadUploadPage();
+  }, []);
+
+  function handleChange(e) {
+    const { id, value, files } = e.target;
+
+    if (id === 'mediaFile') {
+      setSelectedFile(files?.[0] || null);
+      return;
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      [id]: value,
+    }));
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    if (!eventData) {
+      setErrorMessage('No event found.');
+      return;
+    }
+
+    if (!profileData) {
+      setErrorMessage('No profile found.');
+      return;
+    }
+
+    if (!selectedFile) {
+      setErrorMessage('Please choose a file to upload.');
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        console.error('AUTH LOOKUP ERROR:', userError);
+        throw new Error(`Auth lookup failed: ${userError.message}`);
+      }
+
+      if (!user) {
+        throw new Error('You must be signed in to upload media.');
+      }
+
+      const safeFileName = selectedFile.name.replace(/\s+/g, '-');
+      const storagePath = `${eventData.id}/${profileData.id}/${Date.now()}-${safeFileName}`;
+
+      console.log('SUBMIT auth user id:', user.id);
+      console.log('SUBMIT profileData.id:', profileData.id);
+      console.log('SUBMIT eventData.id:', eventData.id);
+      console.log('SUBMIT storagePath:', storagePath);
+      console.log('SUBMIT selectedFile:', {
+        name: selectedFile.name,
+        size: selectedFile.size,
+        type: selectedFile.type,
+      });
+
+      const { error: uploadError } = await supabase.storage
+        .from('event-media')
+        .upload(storagePath, selectedFile, {
+          cacheControl: '3600',
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error('UPLOAD ERROR:', uploadError);
+        throw new Error(`Upload failed: ${uploadError.message}`);
+      }
+
+      const { error: mediaError } = await supabase.from('media').insert({
+        event_id: eventData.id,
+        uploaded_by_profile_id: profileData.id,
+        media_type: formData.mediaType,
+        file_url: storagePath,
+        storage_path: storagePath,
+        caption: formData.caption.trim() || null,
+        is_visible: true,
+      });
+
+      if (mediaError) {
+        console.error('MEDIA INSERT ERROR:', mediaError);
+        throw new Error(`Media insert failed: ${mediaError.message}`);
+      }
+
+      setSuccessMessage('Media uploaded successfully.');
+      setSelectedFile(null);
+      setFormData({
+        mediaType: 'photo',
+        caption: '',
+      });
+    } catch (error) {
+      console.error('HANDLE SUBMIT ERROR:', error);
+      setErrorMessage(error.message || 'Unable to upload media.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <main
+        style={{
+          minHeight: '100vh',
+          fontFamily: 'Arial, sans-serif',
+          background: '#f8f6f2',
+          color: '#2f2a24',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '2rem',
+        }}
+      >
+        <p>Loading upload page...</p>
+      </main>
+    );
+  }
+
+  if (errorMessage && !eventData) {
+    return (
+      <main
+        style={{
+          minHeight: '100vh',
+          fontFamily: 'Arial, sans-serif',
+          background: '#f8f6f2',
+          color: '#2f2a24',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '2rem',
+        }}
+      >
+        <div
+          style={{
+            background: '#ffffff',
+            padding: '2rem',
+            borderRadius: '20px',
+            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.06)',
+            maxWidth: '540px',
+            textAlign: 'center',
+          }}
+        >
+          <h2 style={{ marginTop: 0 }}>Upload Page Error</h2>
+          <p style={{ color: '#b3261e', lineHeight: '1.7' }}>{errorMessage}</p>
+          <Link
+            to="/creator-dashboard"
+            style={{
+              color: '#8a6f5a',
+              textDecoration: 'none',
+              fontWeight: 'bold',
+            }}
+          >
+            ← Back to Dashboard
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main
+      style={{
+        minHeight: '100vh',
+        fontFamily: 'Arial, sans-serif',
+        background: '#f8f6f2',
+        color: '#2f2a24',
+        padding: '2rem 1.5rem 3rem',
+      }}
+    >
+      <section
+        style={{
+          maxWidth: '820px',
+          margin: '0 auto',
+        }}
+      >
+        <div
+          style={{
+            background: '#ffffff',
+            borderRadius: '20px',
+            padding: '2rem',
+            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.06)',
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              color: '#8a6f5a',
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              fontSize: '0.85rem',
+            }}
+          >
+            Upload Media
+          </p>
+
+          <h1
+            style={{
+              marginTop: '0.5rem',
+              marginBottom: '0.5rem',
+              fontSize: '2.2rem',
+            }}
+          >
+            {eventData?.title || 'Your Event'}
+          </h1>
+
+          <p
+            style={{
+              marginTop: 0,
+              marginBottom: '0.5rem',
+              color: '#5f554c',
+              lineHeight: '1.7',
+            }}
+          >
+            Add a photo or video entry to your private event page.
+          </p>
+
+          <p
+            style={{
+              marginTop: 0,
+              marginBottom: '1.5rem',
+              color: '#7a7068',
+              lineHeight: '1.6',
+              fontSize: '0.95rem',
+            }}
+          >
+            Debug info: auth user = {authUserId || 'unknown'} | profile = {profileData?.id || 'unknown'} | event = {eventData?.id || 'unknown'}
+          </p>
+
+          <form onSubmit={handleSubmit}>
+            <label
+              htmlFor="mediaType"
+              style={{
+                display: 'block',
+                marginBottom: '0.5rem',
+                fontWeight: 'bold',
+              }}
+            >
+              Media Type
+            </label>
+            <select
+              id="mediaType"
+              value={formData.mediaType}
+              onChange={handleChange}
+              style={{
+                width: '100%',
+                padding: '0.85rem 1rem',
+                marginBottom: '1rem',
+                borderRadius: '12px',
+                border: '1px solid #d8d1ca',
+                fontSize: '1rem',
+                boxSizing: 'border-box',
+                background: '#ffffff',
+              }}
+            >
+              <option value="photo">Photo</option>
+              <option value="video">Video</option>
+            </select>
+
+            <label
+              htmlFor="mediaFile"
+              style={{
+                display: 'block',
+                marginBottom: '0.5rem',
+                fontWeight: 'bold',
+              }}
+            >
+              Select File
+            </label>
+
+            <input
+              id="mediaFile"
+              type="file"
+              accept={formData.mediaType === 'photo' ? 'image/*' : 'video/*'}
+              onChange={handleChange}
+              style={{
+                width: '100%',
+                padding: '0.85rem 1rem',
+                marginBottom: '1rem',
+                borderRadius: '12px',
+                border: '1px solid #d8d1ca',
+                fontSize: '1rem',
+                boxSizing: 'border-box',
+                background: '#ffffff',
+              }}
+            />
+
+            {formData.mediaType === 'video' && (
+              <p
+                style={{
+                  fontSize: '0.92rem',
+                  color: '#7a7068',
+                  lineHeight: '1.6',
+                  marginTop: 0,
+                  marginBottom: '1rem',
+                }}
+              >
+                For best playback results, videos should be uploaded in MP4 format. Other
+                video file types may not display correctly in all browsers.
+              </p>
+            )}
+
+            <label
+              htmlFor="caption"
+              style={{
+                display: 'block',
+                marginBottom: '0.5rem',
+                fontWeight: 'bold',
+              }}
+            >
+              Caption
+            </label>
+            <textarea
+              id="caption"
+              rows="4"
+              value={formData.caption}
+              onChange={handleChange}
+              placeholder="Add a caption or description"
+              style={{
+                width: '100%',
+                padding: '0.85rem 1rem',
+                marginBottom: '1rem',
+                borderRadius: '12px',
+                border: '1px solid #d8d1ca',
+                fontSize: '1rem',
+                boxSizing: 'border-box',
+                resize: 'vertical',
+              }}
+            />
+
+            {errorMessage && (
+              <p
+                style={{
+                  color: '#b3261e',
+                  marginBottom: '1rem',
+                  lineHeight: '1.6',
+                }}
+              >
+                {errorMessage}
+              </p>
+            )}
+
+            {successMessage && (
+              <p
+                style={{
+                  color: '#2e7d32',
+                  marginBottom: '1rem',
+                  lineHeight: '1.6',
+                }}
+              >
+                {successMessage}
+              </p>
+            )}
+
+            <div
+              style={{
+                display: 'flex',
+                gap: '1rem',
+                flexWrap: 'wrap',
+              }}
+            >
+              <Link
+                to="/event-page"
+                style={{
+                  padding: '0.9rem 1.2rem',
+                  borderRadius: '999px',
+                  border: '1px solid #8a6f5a',
+                  background: '#ffffff',
+                  color: '#8a6f5a',
+                  textDecoration: 'none',
+                  display: 'inline-block',
+                }}
+              >
+                Back to Event Page
+              </Link>
+
+              <button
+                type="submit"
+                disabled={saving}
+                style={{
+                  padding: '0.9rem 1.2rem',
+                  borderRadius: '999px',
+                  background: '#8a6f5a',
+                  color: '#ffffff',
+                  border: 'none',
+                  cursor: saving ? 'not-allowed' : 'pointer',
+                  opacity: saving ? 0.7 : 1,
+                }}
+              >
+                {saving ? 'Saving...' : 'Save Media'}
+              </button>
+            </div>
+          </form>
         </div>
       </section>
     </main>
@@ -2126,13 +3141,14 @@ function ForgotPasswordPage() {
 }
 
 function App() {
-  const [eventDetails, setEventDetails] = useState({
-    id: '',
-    title: '',
-    type: '',
-    date: '',
-    message: '',
-  });
+ const [eventDetails, setEventDetails] = useState({
+  id: '',
+  title: '',
+  type: '',
+  date: '',
+  location: '',
+  message: '',
+});
 
   const [invitationSummary, setInvitationSummary] = useState({
     count: 0,
@@ -2171,6 +3187,8 @@ function App() {
         }
       />
       <Route path="/creator-dashboard" element={<CreatorDashboardPage />} />
+      <Route path="/event-page" element={<PrivateEventPage />} />
+      <Route path="/upload-media" element={<UploadMediaPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
     </Routes>
   );

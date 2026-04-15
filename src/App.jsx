@@ -351,33 +351,62 @@ function SignInPage() {
   }
 
   async function handleSubmit(e) {
-    e.preventDefault();
-    setErrorMessage('');
+  e.preventDefault();
+  setErrorMessage('');
 
-    if (!formData.email || !formData.password) {
-      setErrorMessage('Please enter your email and password.');
-      return;
-    }
-
-    try {
-      setLoading(true);
-
-      const { error } = await supabase.auth.signInWithPassword({
-        email: formData.email,
-        password: formData.password,
-      });
-
-      if (error) {
-        throw error;
-      }
-
-      navigate('/creator-dashboard');
-    } catch (error) {
-      setErrorMessage(error.message || 'Unable to sign in.');
-    } finally {
-      setLoading(false);
-    }
+  if (!formData.email || !formData.password) {
+    setErrorMessage('Please enter your email and password.');
+    return;
   }
+
+  try {
+    setLoading(true);
+
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: formData.email,
+      password: formData.password,
+    });
+
+    if (signInError) {
+      throw signInError;
+    }
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError) {
+      throw userError;
+    }
+
+    if (!user) {
+      throw new Error('Sign in succeeded, but no user was found.');
+    }
+
+    const { data: eventRow, error: eventError } = await supabase
+      .from('events')
+      .select('id')
+      .eq('creator_profile_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (eventError) {
+      throw eventError;
+    }
+
+    if (eventRow) {
+      navigate('/creator-dashboard');
+    } else {
+      navigate('/create-event');
+    }
+  } catch (error) {
+    setErrorMessage(error.message || 'Unable to sign in.');
+  } finally {
+    setLoading(false);
+  }
+}
 
   return (
     <main
@@ -1812,7 +1841,7 @@ function CreatorDashboardPage() {
             You do not have an event page yet. Start by creating your first private page.
           </p>
           <Link
-            to="/create-page"
+            to="/create-event"
             style={{
               color: '#8a6f5a',
               textDecoration: 'none',

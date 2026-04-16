@@ -2660,9 +2660,13 @@ function PrivateEventPage() {
       </section>
     </main>
   );
-}function UploadMediaPage() {
+}
+import * as tus from 'tus-js-client';
+
+function UploadMediaPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [eventData, setEventData] = useState(null);
@@ -2689,7 +2693,6 @@ function PrivateEventPage() {
         if (userError) throw userError;
         if (!user) throw new Error('You must be signed in to upload media.');
 
-        console.log('LOAD PAGE auth user id:', user.id);
         setAuthUserId(user.id);
 
         const { data: profileRow, error: profileError } = await supabase
@@ -2699,8 +2702,6 @@ function PrivateEventPage() {
           .maybeSingle();
 
         if (profileError) throw profileError;
-
-        console.log('LOAD PAGE profile row:', profileRow);
         setProfileData(profileRow);
 
         const { data: eventRow, error: eventError } = await supabase
@@ -2714,7 +2715,6 @@ function PrivateEventPage() {
         if (eventError) throw eventError;
         if (!eventRow) throw new Error('No event was found for this account.');
 
-        console.log('LOAD PAGE event row:', eventRow);
         setEventData(eventRow);
       } catch (error) {
         console.error('LOAD PAGE ERROR:', error);
@@ -2741,10 +2741,69 @@ function PrivateEventPage() {
     }));
   }
 
+  async function uploadVideoResumable(file, storagePath) {
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
+
+    if (sessionError) {
+      throw new Error(`Session error: ${sessionError.message}`);
+    }
+
+    if (!session?.access_token) {
+      throw new Error('No active session found for resumable upload.');
+    }
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const projectId = supabaseUrl.replace('https://', '').split('.')[0];
+    const endpoint = `https://${projectId}.storage.supabase.co/storage/v1/upload/resumable`;
+
+    return new Promise((resolve, reject) => {
+      const upload = new tus.Upload(file, {
+        endpoint,
+        retryDelays: [0, 3000, 5000, 10000, 20000],
+        headers: {
+          authorization: `Bearer ${session.access_token}`,
+          'x-upsert': 'false',
+        },
+        uploadDataDuringCreation: true,
+        removeFingerprintOnSuccess: true,
+        metadata: {
+          bucketName: 'event-media',
+          objectName: storagePath,
+          contentType: file.type || 'video/mp4',
+          cacheControl: '3600',
+        },
+        chunkSize: 6 * 1024 * 1024,
+        onError(error) {
+          console.error('TUS UPLOAD ERROR:', error);
+          reject(new Error(`Upload failed: ${error.message || error}`));
+        },
+        onProgress(bytesUploaded, bytesTotal) {
+          const percentage = ((bytesUploaded / bytesTotal) * 100).toFixed(2);
+          setUploadProgress(`${percentage}% uploaded`);
+        },
+        onSuccess() {
+          setUploadProgress('Upload complete');
+          resolve();
+        },
+      });
+
+      upload.findPreviousUploads().then((previousUploads) => {
+        if (previousUploads.length) {
+          upload.resumeFromPreviousUpload(previousUploads[0]);
+        }
+        upload.start();
+      });
+    });
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setErrorMessage('');
     setSuccessMessage('');
+    setUploadProgress('');
 
     if (!eventData) {
       setErrorMessage('No event found.');
@@ -2770,7 +2829,6 @@ function PrivateEventPage() {
       } = await supabase.auth.getUser();
 
       if (userError) {
-        console.error('AUTH LOOKUP ERROR:', userError);
         throw new Error(`Auth lookup failed: ${userError.message}`);
       }
 
@@ -2791,16 +2849,20 @@ function PrivateEventPage() {
         type: selectedFile.type,
       });
 
-      const { error: uploadError } = await supabase.storage
-        .from('event-media')
-        .upload(storagePath, selectedFile, {
-          cacheControl: '3600',
-          upsert: false,
-        });
+      if (formData.mediaType === 'photo') {
+        const { error: uploadError } = await supabase.storage
+          .from('event-media')
+          .upload(storagePath, selectedFile, {
+            cacheControl: '3600',
+            upsert: false,
+          });
 
-      if (uploadError) {
-        console.error('UPLOAD ERROR:', uploadError);
-        throw new Error(`Upload failed: ${uploadError.message}`);
+        if (uploadError) {
+          console.error('PHOTO UPLOAD ERROR:', uploadError);
+          throw new Error(`Upload failed: ${uploadError.message}`);
+        }
+      } else {
+        await uploadVideoResumable(selectedFile, storagePath);
       }
 
       const { error: mediaError } = await supabase.from('media').insert({
@@ -2824,6 +2886,7 @@ function PrivateEventPage() {
         mediaType: 'photo',
         caption: '',
       });
+      setUploadProgress('');
     } catch (error) {
       console.error('HANDLE SUBMIT ERROR:', error);
       setErrorMessage(error.message || 'Unable to upload media.');
@@ -3059,6 +3122,18 @@ function PrivateEventPage() {
                 resize: 'vertical',
               }}
             />
+
+            {uploadProgress && (
+              <p
+                style={{
+                  color: '#5f554c',
+                  marginBottom: '1rem',
+                  lineHeight: '1.6',
+                }}
+              >
+                {uploadProgress}
+              </p>
+            )}
 
             {errorMessage && (
               <p
@@ -3360,7 +3435,7 @@ function PrivateEventPage() {
               fontSize: '0.95rem',
             }}
           >
-            Debug info: auth user = {authUserId || 'unknown'} | profile = {profileData?.id || 'unknown'} | event = {eventData?.id || 'unknown'}
+            {/* Debug info: auth user = {authUserId || 'unknown'} | profile = {profileData?.id || 'unknown'} | event = {eventData?.id || 'unknown'} */}
           </p>
 
           <form onSubmit={handleSubmit}>

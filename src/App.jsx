@@ -2584,13 +2584,14 @@ function PrivateEventPage() {
                   {item.media_type === 'video' && item.signedUrl ? (
                     <video
                       controls
+                      preload="metadata"
                       src={item.signedUrl}
                       style={{
                         width: '100%',
-                        height: '220px',
-                        objectFit: 'cover',
+                        maxHeight: '320px',
                         borderRadius: '12px',
                         marginBottom: '0.75rem',
+                        background: '#000',
                       }}
                     />
                   ) : null}

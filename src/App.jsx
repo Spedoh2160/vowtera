@@ -2660,8 +2660,7 @@ function PrivateEventPage() {
       </section>
     </main>
   );
-}
-function UploadMediaPage() {
+}function UploadMediaPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -2727,6 +2726,408 @@ function UploadMediaPage() {
 
     loadUploadPage();
   }, []);
+
+  function handleChange(e) {
+    const { id, value, files } = e.target;
+
+    if (id === 'mediaFile') {
+      setSelectedFile(files?.[0] || null);
+      return;
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      [id]: value,
+    }));
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    if (!eventData) {
+      setErrorMessage('No event found.');
+      return;
+    }
+
+    if (!profileData) {
+      setErrorMessage('No profile found.');
+      return;
+    }
+
+    if (!selectedFile) {
+      setErrorMessage('Please choose a file to upload.');
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        console.error('AUTH LOOKUP ERROR:', userError);
+        throw new Error(`Auth lookup failed: ${userError.message}`);
+      }
+
+      if (!user) {
+        throw new Error('You must be signed in to upload media.');
+      }
+
+      const safeFileName = selectedFile.name.replace(/\s+/g, '-');
+      const storagePath = `${eventData.id}/${profileData.id}/${Date.now()}-${safeFileName}`;
+
+      console.log('SUBMIT auth user id:', user.id);
+      console.log('SUBMIT profileData.id:', profileData.id);
+      console.log('SUBMIT eventData.id:', eventData.id);
+      console.log('SUBMIT storagePath:', storagePath);
+      console.log('SUBMIT selectedFile:', {
+        name: selectedFile.name,
+        size: selectedFile.size,
+        type: selectedFile.type,
+      });
+
+      const { error: uploadError } = await supabase.storage
+        .from('event-media')
+        .upload(storagePath, selectedFile, {
+          cacheControl: '3600',
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error('UPLOAD ERROR:', uploadError);
+        throw new Error(`Upload failed: ${uploadError.message}`);
+      }
+
+      const { error: mediaError } = await supabase.from('media').insert({
+        event_id: eventData.id,
+        uploaded_by_profile_id: profileData.id,
+        media_type: formData.mediaType,
+        file_url: storagePath,
+        storage_path: storagePath,
+        caption: formData.caption.trim() || null,
+        is_visible: true,
+      });
+
+      if (mediaError) {
+        console.error('MEDIA INSERT ERROR:', mediaError);
+        throw new Error(`Media insert failed: ${mediaError.message}`);
+      }
+
+      setSuccessMessage('Media uploaded successfully.');
+      setSelectedFile(null);
+      setFormData({
+        mediaType: 'photo',
+        caption: '',
+      });
+    } catch (error) {
+      console.error('HANDLE SUBMIT ERROR:', error);
+      setErrorMessage(error.message || 'Unable to upload media.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <main
+        style={{
+          minHeight: '100vh',
+          fontFamily: 'Arial, sans-serif',
+          background: '#f8f6f2',
+          color: '#2f2a24',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '2rem',
+        }}
+      >
+        <p>Loading upload page...</p>
+      </main>
+    );
+  }
+
+  if (errorMessage && !eventData) {
+    return (
+      <main
+        style={{
+          minHeight: '100vh',
+          fontFamily: 'Arial, sans-serif',
+          background: '#f8f6f2',
+          color: '#2f2a24',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '2rem',
+        }}
+      >
+        <div
+          style={{
+            background: '#ffffff',
+            padding: '2rem',
+            borderRadius: '20px',
+            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.06)',
+            maxWidth: '540px',
+            textAlign: 'center',
+          }}
+        >
+          <h2 style={{ marginTop: 0 }}>Upload Page Error</h2>
+          <p style={{ color: '#b3261e', lineHeight: '1.7' }}>{errorMessage}</p>
+          <Link
+            to="/creator-dashboard"
+            style={{
+              color: '#8a6f5a',
+              textDecoration: 'none',
+              fontWeight: 'bold',
+            }}
+          >
+            ← Back to Dashboard
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main
+      style={{
+        minHeight: '100vh',
+        fontFamily: 'Arial, sans-serif',
+        background: '#f8f6f2',
+        color: '#2f2a24',
+        padding: '2rem 1.5rem 3rem',
+      }}
+    >
+      <section
+        style={{
+          maxWidth: '820px',
+          margin: '0 auto',
+        }}
+      >
+        <div
+          style={{
+            background: '#ffffff',
+            borderRadius: '20px',
+            padding: '2rem',
+            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.06)',
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              color: '#8a6f5a',
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              fontSize: '0.85rem',
+            }}
+          >
+            Upload Media
+          </p>
+
+          <h1
+            style={{
+              marginTop: '0.5rem',
+              marginBottom: '0.5rem',
+              fontSize: '2.2rem',
+            }}
+          >
+            {eventData?.title || 'Your Event'}
+          </h1>
+
+          <p
+            style={{
+              marginTop: 0,
+              marginBottom: '0.5rem',
+              color: '#5f554c',
+              lineHeight: '1.7',
+            }}
+          >
+            Add a photo or video entry to your private event page.
+          </p>
+
+          <p
+            style={{
+              marginTop: 0,
+              marginBottom: '1.5rem',
+              color: '#7a7068',
+              lineHeight: '1.6',
+              fontSize: '0.95rem',
+            }}
+          >
+            Debug info: auth user = {authUserId || 'unknown'} | profile = {profileData?.id || 'unknown'} | event = {eventData?.id || 'unknown'}
+          </p>
+
+          <form onSubmit={handleSubmit}>
+            <label
+              htmlFor="mediaType"
+              style={{
+                display: 'block',
+                marginBottom: '0.5rem',
+                fontWeight: 'bold',
+              }}
+            >
+              Media Type
+            </label>
+            <select
+              id="mediaType"
+              value={formData.mediaType}
+              onChange={handleChange}
+              style={{
+                width: '100%',
+                padding: '0.85rem 1rem',
+                marginBottom: '1rem',
+                borderRadius: '12px',
+                border: '1px solid #d8d1ca',
+                fontSize: '1rem',
+                boxSizing: 'border-box',
+                background: '#ffffff',
+              }}
+            >
+              <option value="photo">Photo</option>
+              <option value="video">Video</option>
+            </select>
+
+            <label
+              htmlFor="mediaFile"
+              style={{
+                display: 'block',
+                marginBottom: '0.5rem',
+                fontWeight: 'bold',
+              }}
+            >
+              Select File
+            </label>
+            <input
+              id="mediaFile"
+              type="file"
+              accept={formData.mediaType === 'photo' ? 'image/*' : '.mp4,video/mp4'}
+              onChange={handleChange}
+              style={{
+                width: '100%',
+                padding: '0.85rem 1rem',
+                marginBottom: '1rem',
+                borderRadius: '12px',
+                border: '1px solid #d8d1ca',
+                fontSize: '1rem',
+                boxSizing: 'border-box',
+                background: '#ffffff',
+              }}
+            />
+
+            {formData.mediaType === 'video' && (
+              <p
+                style={{
+                  fontSize: '0.92rem',
+                  color: '#7a7068',
+                  lineHeight: '1.6',
+                  marginTop: 0,
+                  marginBottom: '1rem',
+                }}
+              >
+                For best playback results, videos should be uploaded in MP4 format.
+              </p>
+            )}
+
+            <label
+              htmlFor="caption"
+              style={{
+                display: 'block',
+                marginBottom: '0.5rem',
+                fontWeight: 'bold',
+              }}
+            >
+              Caption
+            </label>
+            <textarea
+              id="caption"
+              rows="4"
+              value={formData.caption}
+              onChange={handleChange}
+              placeholder="Add a caption or description"
+              style={{
+                width: '100%',
+                padding: '0.85rem 1rem',
+                marginBottom: '1rem',
+                borderRadius: '12px',
+                border: '1px solid #d8d1ca',
+                fontSize: '1rem',
+                boxSizing: 'border-box',
+                resize: 'vertical',
+              }}
+            />
+
+            {errorMessage && (
+              <p
+                style={{
+                  color: '#b3261e',
+                  marginBottom: '1rem',
+                  lineHeight: '1.6',
+                }}
+              >
+                {errorMessage}
+              </p>
+            )}
+
+            {successMessage && (
+              <p
+                style={{
+                  color: '#2e7d32',
+                  marginBottom: '1rem',
+                  lineHeight: '1.6',
+                }}
+              >
+                {successMessage}
+              </p>
+            )}
+
+            <div
+              style={{
+                display: 'flex',
+                gap: '1rem',
+                flexWrap: 'wrap',
+              }}
+            >
+              <Link
+                to="/event-page"
+                style={{
+                  padding: '0.9rem 1.2rem',
+                  borderRadius: '999px',
+                  border: '1px solid #8a6f5a',
+                  background: '#ffffff',
+                  color: '#8a6f5a',
+                  textDecoration: 'none',
+                  display: 'inline-block',
+                }}
+              >
+                Back to Event Page
+              </Link>
+
+              <button
+                type="submit"
+                disabled={saving}
+                style={{
+                  padding: '0.9rem 1.2rem',
+                  borderRadius: '999px',
+                  background: '#8a6f5a',
+                  color: '#ffffff',
+                  border: 'none',
+                  cursor: saving ? 'not-allowed' : 'pointer',
+                  opacity: saving ? 0.7 : 1,
+                }}
+              >
+                {saving ? 'Saving...' : 'Save Media'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
+    </main>
+  );
+}
 
   function handleChange(e) {
     const { id, value, files } = e.target;

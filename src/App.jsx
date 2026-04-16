@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Routes, Route, Link, useNavigate } from 'react-router-dom';
 import { supabase } from './lib/supabase';
+import * as tus from 'tus-js-client';
 
 function HomePage() {
   const cardStyle = {
@@ -2661,7 +2662,6 @@ function PrivateEventPage() {
     </main>
   );
 }
-import * as tus from 'tus-js-client';
 
 function UploadMediaPage() {
   const [loading, setLoading] = useState(true);
@@ -2798,6 +2798,7 @@ function UploadMediaPage() {
       });
     });
   }
+    
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -3202,7 +3203,7 @@ function UploadMediaPage() {
       </section>
     </main>
   );
-}
+
 
   function handleChange(e) {
     const { id, value, files } = e.target;
